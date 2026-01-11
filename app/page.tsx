@@ -4,11 +4,31 @@ import { useState, useEffect, useRef } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { mockEmails } from "@/data/mockEmails";
 import { Email } from "@/types/email";
-import EmailListItem from "@/components/EmailListItem";
+import EmailCard from "@/components/EmailCard";
+
+type ViewMode = "months" | "swipe";
+
+const MONTH_COLORS = [
+  "bg-pink-500",
+  "bg-blue-400",
+  "bg-indigo-600",
+  "bg-orange-500",
+  "bg-amber-400",
+  "bg-yellow-400",
+  "bg-sky-400",
+  "bg-red-500",
+  "bg-purple-500",
+  "bg-green-500",
+  "bg-teal-500",
+  "bg-rose-500",
+];
 
 export default function Home() {
   const { data: session, status } = useSession();
-  const [emails, setEmails] = useState<Email[]>(mockEmails);
+  const [allEmails, setAllEmails] = useState<Email[]>(mockEmails);
+  const [currentMonthEmails, setCurrentMonthEmails] = useState<Email[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState<string>("");
+  const [viewMode, setViewMode] = useState<ViewMode>("months");
   const [savedEmails, setSavedEmails] = useState<Email[]>([]);
   const [deletedEmails, setDeletedEmails] = useState<Email[]>([]);
   const [showFeedback, setShowFeedback] = useState<{
@@ -28,7 +48,7 @@ export default function Home() {
       fetchEmails();
       hasLoadedRef.current.real = true;
     } else if (mode === "demo" && !hasLoadedRef.current.demo) {
-      setEmails(mockEmails);
+      setAllEmails(mockEmails);
       hasLoadedRef.current.demo = true;
     }
   }, [mode, session]);
@@ -39,7 +59,7 @@ export default function Home() {
       const response = await fetch("/api/emails");
       const data = await response.json();
       if (data.emails) {
-        setEmails(data.emails);
+        setAllEmails(data.emails);
       }
     } catch (error) {
       console.error("Error fetching emails:", error);
@@ -51,8 +71,9 @@ export default function Home() {
   };
 
   const handleSwipeLeft = async (email: Email) => {
-    // Remove from emails
-    setEmails(emails.filter((e) => e.id !== email.id));
+    // Remove from current month emails
+    setCurrentMonthEmails(currentMonthEmails.filter((e) => e.id !== email.id));
+    setAllEmails(allEmails.filter((e) => e.id !== email.id));
     setDeletedEmails([...deletedEmails, email]);
 
     // Show feedback
@@ -74,8 +95,9 @@ export default function Home() {
   };
 
   const handleSwipeRight = async (email: Email) => {
-    // Remove from emails
-    setEmails(emails.filter((e) => e.id !== email.id));
+    // Remove from current month emails
+    setCurrentMonthEmails(currentMonthEmails.filter((e) => e.id !== email.id));
+    setAllEmails(allEmails.filter((e) => e.id !== email.id));
     setSavedEmails([...savedEmails, email]);
 
     // Show feedback
@@ -101,10 +123,11 @@ export default function Home() {
     setMode(newMode);
     setSavedEmails([]);
     setDeletedEmails([]);
+    setViewMode("months");
 
     // Reset emails based on mode
     if (newMode === "demo") {
-      setEmails(mockEmails);
+      setAllEmails(mockEmails);
     }
   };
 
@@ -113,44 +136,45 @@ export default function Home() {
       hasLoadedRef.current.real = false;
       fetchEmails();
     } else {
-      setEmails(mockEmails);
+      setAllEmails(mockEmails);
     }
     setSavedEmails([]);
     setDeletedEmails([]);
+    setViewMode("months");
   };
 
-  // Group emails by date
-  const groupedEmails = emails.reduce((groups, email) => {
-    const date = email.date;
-    if (!groups[date]) {
-      groups[date] = [];
+  // Group emails by month
+  const groupedByMonth = allEmails.reduce((groups, email) => {
+    const date = new Date(email.date);
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    if (!groups[monthKey]) {
+      groups[monthKey] = [];
     }
-    groups[date].push(email);
+    groups[monthKey].push(email);
     return groups;
   }, {} as Record<string, Email[]>);
 
-  const sortedDates = Object.keys(groupedEmails).sort((a, b) =>
-    new Date(b).getTime() - new Date(a).getTime()
-  );
+  const sortedMonths = Object.keys(groupedByMonth).sort((a, b) => b.localeCompare(a));
 
-  // Format date for display
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+  // Format month for display
+  const formatMonth = (monthKey: string) => {
+    const [year, month] = monthKey.split("-");
+    const date = new Date(parseInt(year), parseInt(month) - 1);
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      year: "2-digit",
+    }).toUpperCase().replace(", ", " '");
+  };
 
-    if (date.toDateString() === today.toDateString()) {
-      return "Today";
-    } else if (date.toDateString() === yesterday.toDateString()) {
-      return "Yesterday";
-    } else {
-      return date.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: date.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
-      });
-    }
+  const handleMonthClick = (monthKey: string) => {
+    setSelectedMonth(monthKey);
+    setCurrentMonthEmails(groupedByMonth[monthKey]);
+    setViewMode("swipe");
+  };
+
+  const handleBackToMonths = () => {
+    setViewMode("months");
+    setSelectedMonth("");
   };
 
   // Show loading state
@@ -164,76 +188,68 @@ export default function Home() {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header */}
-      <header className="bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-4">
+  // Month selection view
+  if (viewMode === "months") {
+    return (
+      <div className="min-h-screen bg-white dark:bg-gray-900">
+        {/* Header */}
+        <header className="bg-white dark:bg-gray-800 shadow-sm p-4">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                📧 EmailSwipe
-              </h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Swipe to manage your inbox
-              </p>
-            </div>
+            <h1 className="text-3xl font-black text-gray-900 dark:text-white" style={{ fontFamily: 'Impact, sans-serif' }}>
+              swipewipe
+            </h1>
             <div className="flex items-center space-x-3">
-              {session && (
-                <button
-                  onClick={handleModeToggle}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                    mode === "real"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                  }`}
-                >
-                  {mode === "real" ? "Real Emails" : "Demo Mode"}
-                </button>
-              )}
-              {session ? (
-                <button
-                  onClick={() => signOut()}
-                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors text-xs"
-                >
-                  Sign Out
-                </button>
-              ) : (
-                <button
-                  onClick={() => signIn("google")}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors text-xs"
-                >
-                  Sign In
-                </button>
-              )}
+              <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
+                <div className="w-8 h-8 flex flex-col justify-center items-center space-y-1">
+                  <div className="w-6 h-0.5 bg-gray-900 dark:bg-white"></div>
+                  <div className="w-6 h-0.5 bg-gray-900 dark:bg-white"></div>
+                  <div className="w-6 h-0.5 bg-gray-900 dark:bg-white"></div>
+                </div>
+              </button>
             </div>
           </div>
+        </header>
 
-          {/* Stats */}
-          <div className="mt-3 flex items-center justify-between text-sm">
-            <div className="flex space-x-4">
-              <span className="text-gray-600 dark:text-gray-400">
-                {emails.length} remaining
-              </span>
-              <span className="text-green-600 dark:text-green-400">
-                ✓ {savedEmails.length} archived
-              </span>
-              <span className="text-red-600 dark:text-red-400">
-                🗑️ {deletedEmails.length} deleted
-              </span>
-            </div>
+        {/* Auth controls */}
+        <div className="px-4 py-3 flex items-center justify-between border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center space-x-3">
+            {session && (
+              <button
+                onClick={handleModeToggle}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  mode === "real"
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                }`}
+              >
+                {mode === "real" ? "Real Emails" : "Demo Mode"}
+              </button>
+            )}
+            {session ? (
+              <button
+                onClick={() => signOut()}
+                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors text-xs"
+              >
+                Sign Out
+              </button>
+            ) : (
+              <button
+                onClick={() => signIn("google")}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors text-xs"
+              >
+                Sign In
+              </button>
+            )}
           </div>
         </div>
-      </header>
 
-      {/* Main content */}
-      <main className="max-w-4xl mx-auto px-4 py-6">
+        {/* Month blocks */}
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20">
             <div className="text-4xl mb-4">⏳</div>
             <p className="text-gray-600 dark:text-gray-400">Loading emails...</p>
           </div>
-        ) : emails.length === 0 ? (
+        ) : allEmails.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
             <div className="text-6xl mb-4">🎉</div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
@@ -250,42 +266,129 @@ export default function Home() {
             </button>
           </div>
         ) : (
-          <div className="space-y-6">
-            {sortedDates.map((date) => (
-              <div key={date} className="space-y-3">
-                {/* Date header */}
-                <div className="flex items-center space-x-3">
-                  <h2 className="text-lg font-bold text-gray-900 dark:text-white uppercase tracking-wide">
-                    {formatDate(date)}
-                  </h2>
-                  <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    {groupedEmails[date].length} email{groupedEmails[date].length !== 1 ? "s" : ""}
-                  </span>
-                </div>
-
-                {/* Emails for this date */}
-                <div className="space-y-2">
-                  {groupedEmails[date].map((email) => (
-                    <EmailListItem
-                      key={email.id}
-                      email={email}
-                      onSwipeLeft={handleSwipeLeft}
-                      onSwipeRight={handleSwipeRight}
-                    />
-                  ))}
-                </div>
-              </div>
+          <div className="flex flex-col">
+            {sortedMonths.map((monthKey, index) => (
+              <button
+                key={monthKey}
+                onClick={() => handleMonthClick(monthKey)}
+                className={`${MONTH_COLORS[index % MONTH_COLORS.length]} text-white py-16 px-8 text-left hover:opacity-90 transition-opacity`}
+              >
+                <h2 className="text-5xl font-black tracking-tight">
+                  {formatMonth(monthKey)}
+                </h2>
+                <p className="text-white/90 mt-2 text-sm">
+                  {groupedByMonth[monthKey].length} email{groupedByMonth[monthKey].length !== 1 ? "s" : ""}
+                </p>
+              </button>
             ))}
           </div>
         )}
+      </div>
+    );
+  }
 
-        {/* Swipe hint */}
-        {emails.length > 0 && (
-          <div className="mt-8 text-center text-sm text-gray-500 dark:text-gray-400">
-            👈 Swipe left to delete • Swipe right to archive 👉
+  // Swipe view
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 dark:from-gray-900 dark:to-gray-800">
+      {/* Header */}
+      <header className="bg-white dark:bg-gray-800 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={handleBackToMonths}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+              >
+                <svg className="w-6 h-6 text-gray-900 dark:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {formatMonth(selectedMonth)}
+                </h1>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Swipe to manage emails
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className="text-right text-sm">
+                <p className="text-green-600 dark:text-green-400">
+                  Saved: {savedEmails.length}
+                </p>
+                <p className="text-red-600 dark:text-red-400">
+                  Deleted: {deletedEmails.length}
+                </p>
+              </div>
+            </div>
           </div>
-        )}
+        </div>
+      </header>
+
+      {/* Main content */}
+      <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center justify-center">
+          {/* Email stack */}
+          <div className="relative w-full max-w-md h-[500px] mb-8">
+            {currentMonthEmails.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full">
+                <div className="text-6xl mb-4">🎉</div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                  All Done!
+                </h2>
+                <p className="text-gray-600 dark:text-gray-400 mb-4">
+                  You've reviewed all emails for this month
+                </p>
+                <button
+                  onClick={handleBackToMonths}
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
+                >
+                  Back to Months
+                </button>
+              </div>
+            ) : (
+              <>
+                {currentMonthEmails.slice(0, 3).map((email, index) => (
+                  <EmailCard
+                    key={email.id}
+                    email={email}
+                    onSwipeLeft={handleSwipeLeft}
+                    onSwipeRight={handleSwipeRight}
+                    isTop={index === 0}
+                  />
+                ))}
+              </>
+            )}
+          </div>
+
+          {/* Controls */}
+          {currentMonthEmails.length > 0 && (
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => handleSwipeLeft(currentMonthEmails[0])}
+                className="w-16 h-16 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg transition-all transform hover:scale-110 flex items-center justify-center text-2xl"
+                aria-label="Delete email"
+              >
+                ✕
+              </button>
+              <button
+                onClick={() => handleSwipeRight(currentMonthEmails[0])}
+                className="w-16 h-16 bg-green-500 hover:bg-green-600 text-white rounded-full shadow-lg transition-all transform hover:scale-110 flex items-center justify-center text-2xl"
+                aria-label="Save email"
+              >
+                ✓
+              </button>
+            </div>
+          )}
+
+          {/* Stats */}
+          <div className="mt-8 text-center">
+            <p className="text-gray-600 dark:text-gray-400">
+              {currentMonthEmails.length} email{currentMonthEmails.length !== 1 ? "s" : ""} remaining
+            </p>
+          </div>
+        </div>
       </main>
 
       {/* Feedback toast */}
