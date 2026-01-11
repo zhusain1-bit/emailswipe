@@ -35,7 +35,7 @@ export default function EmailCard({ email, onSwipeLeft, onSwipeRight, isTop }: E
     const threshold = 100;
 
     if (diff > threshold) {
-      // Swipe right - save
+      // Swipe right - keep
       onSwipeRight(email);
     } else if (diff < -threshold) {
       // Swipe left - delete
@@ -109,7 +109,7 @@ export default function EmailCard({ email, onSwipeLeft, onSwipeRight, isTop }: E
             className="absolute top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg font-bold text-lg transform rotate-12"
             style={{ opacity: Math.max(0, translateX / 200) }}
           >
-            SAVE
+            KEEP
           </div>
           <div
             className="absolute top-4 left-4 bg-red-500 text-white px-4 py-2 rounded-lg font-bold text-lg transform -rotate-12"

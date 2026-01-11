@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { mockEmails } from "@/data/mockEmails";
 import { Email } from "@/types/email";
 import EmailCard from "@/components/EmailCard";
 
@@ -25,33 +24,24 @@ const MONTH_COLORS = [
 
 export default function Home() {
   const { data: session, status } = useSession();
-  const [allEmails, setAllEmails] = useState<Email[]>(mockEmails);
+  const [allEmails, setAllEmails] = useState<Email[]>([]);
   const [currentMonthEmails, setCurrentMonthEmails] = useState<Email[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [viewMode, setViewMode] = useState<ViewMode>("months");
-  const [savedEmails, setSavedEmails] = useState<Email[]>([]);
+  const [keptEmails, setKeptEmails] = useState<Email[]>([]);
   const [deletedEmails, setDeletedEmails] = useState<Email[]>([]);
   const [showFeedback, setShowFeedback] = useState<{
-    type: "saved" | "deleted" | null;
+    type: "kept" | "deleted" | null;
     message: string;
   }>({ type: null, message: "" });
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<"demo" | "real">("demo");
-  const hasLoadedRef = useRef<{ demo: boolean; real: boolean }>({
-    demo: true,
-    real: false,
-  });
 
-  // Only fetch emails when switching modes and haven't loaded yet
+  // Fetch emails when user is authenticated
   useEffect(() => {
-    if (mode === "real" && session && !hasLoadedRef.current.real) {
+    if (session) {
       fetchEmails();
-      hasLoadedRef.current.real = true;
-    } else if (mode === "demo" && !hasLoadedRef.current.demo) {
-      setAllEmails(mockEmails);
-      hasLoadedRef.current.demo = true;
     }
-  }, [mode, session]);
+  }, [session]);
 
   const fetchEmails = async () => {
     setLoading(true);
@@ -80,8 +70,8 @@ export default function Home() {
     setShowFeedback({ type: "deleted", message: "Email deleted" });
     setTimeout(() => setShowFeedback({ type: null, message: "" }), 1500);
 
-    // Call API if in real mode
-    if (mode === "real" && session) {
+    // Call delete API
+    if (session) {
       try {
         await fetch("/api/emails/delete", {
           method: "POST",
@@ -95,50 +85,21 @@ export default function Home() {
   };
 
   const handleSwipeRight = async (email: Email) => {
-    // Remove from current month emails
+    // Just remove from view - keep the email in inbox
     setCurrentMonthEmails(currentMonthEmails.filter((e) => e.id !== email.id));
     setAllEmails(allEmails.filter((e) => e.id !== email.id));
-    setSavedEmails([...savedEmails, email]);
+    setKeptEmails([...keptEmails, email]);
 
     // Show feedback
-    setShowFeedback({ type: "saved", message: "Email archived" });
+    setShowFeedback({ type: "kept", message: "Email kept" });
     setTimeout(() => setShowFeedback({ type: null, message: "" }), 1500);
 
-    // Call API if in real mode
-    if (mode === "real" && session) {
-      try {
-        await fetch("/api/emails/archive", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ emailId: email.id }),
-        });
-      } catch (error) {
-        console.error("Error archiving email:", error);
-      }
-    }
-  };
-
-  const handleModeToggle = () => {
-    const newMode = mode === "demo" ? "real" : "demo";
-    setMode(newMode);
-    setSavedEmails([]);
-    setDeletedEmails([]);
-    setViewMode("months");
-
-    // Reset emails based on mode
-    if (newMode === "demo") {
-      setAllEmails(mockEmails);
-    }
+    // No API call - just remove from view
   };
 
   const handleReset = () => {
-    if (mode === "real") {
-      hasLoadedRef.current.real = false;
-      fetchEmails();
-    } else {
-      setAllEmails(mockEmails);
-    }
-    setSavedEmails([]);
+    fetchEmails();
+    setKeptEmails([]);
     setDeletedEmails([]);
     setViewMode("months");
   };
@@ -168,7 +129,7 @@ export default function Home() {
 
   const handleMonthClick = (monthKey: string) => {
     setSelectedMonth(monthKey);
-    setCurrentMonthEmails(groupedByMonth[monthKey]);
+    setCurrentMonthEmails([...groupedByMonth[monthKey]]);
     setViewMode("swipe");
   };
 
@@ -180,9 +141,31 @@ export default function Home() {
   // Show loading state
   if (status === "loading") {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+      <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center">
         <div className="text-2xl font-semibold text-gray-700 dark:text-gray-300">
           Loading...
+        </div>
+      </div>
+    );
+  }
+
+  // Not signed in
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-4xl font-black mb-4 text-gray-900 dark:text-white">
+            swipewipe
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            Sign in with Gmail to start swiping through your emails
+          </p>
+          <button
+            onClick={() => signIn("google")}
+            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
+          >
+            Sign In with Gmail
+          </button>
         </div>
       </div>
     );
@@ -199,6 +182,12 @@ export default function Home() {
               swipewipe
             </h1>
             <div className="flex items-center space-x-3">
+              <button
+                onClick={() => signOut()}
+                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors text-xs"
+              >
+                Sign Out
+              </button>
               <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
                 <div className="w-8 h-8 flex flex-col justify-center items-center space-y-1">
                   <div className="w-6 h-0.5 bg-gray-900 dark:bg-white"></div>
@@ -209,39 +198,6 @@ export default function Home() {
             </div>
           </div>
         </header>
-
-        {/* Auth controls */}
-        <div className="px-4 py-3 flex items-center justify-between border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center space-x-3">
-            {session && (
-              <button
-                onClick={handleModeToggle}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  mode === "real"
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                }`}
-              >
-                {mode === "real" ? "Real Emails" : "Demo Mode"}
-              </button>
-            )}
-            {session ? (
-              <button
-                onClick={() => signOut()}
-                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors text-xs"
-              >
-                Sign Out
-              </button>
-            ) : (
-              <button
-                onClick={() => signIn("google")}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors text-xs"
-              >
-                Sign In
-              </button>
-            )}
-          </div>
-        </div>
 
         {/* Month blocks */}
         {loading ? (
@@ -262,7 +218,7 @@ export default function Home() {
               onClick={handleReset}
               className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
             >
-              {mode === "real" ? "Refresh Emails" : "Reset Demo"}
+              Refresh Emails
             </button>
           </div>
         ) : (
@@ -315,7 +271,7 @@ export default function Home() {
             <div className="flex items-center space-x-4">
               <div className="text-right text-sm">
                 <p className="text-green-600 dark:text-green-400">
-                  Saved: {savedEmails.length}
+                  Kept: {keptEmails.length}
                 </p>
                 <p className="text-red-600 dark:text-red-400">
                   Deleted: {deletedEmails.length}
@@ -375,7 +331,7 @@ export default function Home() {
               <button
                 onClick={() => handleSwipeRight(currentMonthEmails[0])}
                 className="w-16 h-16 bg-green-500 hover:bg-green-600 text-white rounded-full shadow-lg transition-all transform hover:scale-110 flex items-center justify-center text-2xl"
-                aria-label="Save email"
+                aria-label="Keep email"
               >
                 ✓
               </button>
@@ -395,7 +351,7 @@ export default function Home() {
       {showFeedback.type && (
         <div
           className={`fixed bottom-8 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-lg shadow-lg text-white font-semibold transition-all ${
-            showFeedback.type === "saved" ? "bg-green-500" : "bg-red-500"
+            showFeedback.type === "kept" ? "bg-green-500" : "bg-red-500"
           }`}
         >
           {showFeedback.message}
