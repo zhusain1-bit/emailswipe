@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     }
 
     const gmailService = new GmailService(session.accessToken);
-    const emails = await gmailService.getEmails(20);
+    const emails = await gmailService.getEmails(100);
 
     return NextResponse.json({ emails });
   } catch (error) {

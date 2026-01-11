@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { Email } from "@/types/email";
 import EmailCard from "@/components/EmailCard";
@@ -35,11 +35,13 @@ export default function Home() {
     message: string;
   }>({ type: null, message: "" });
   const [loading, setLoading] = useState(false);
+  const hasLoadedRef = useRef(false);
 
-  // Fetch emails when user is authenticated
+  // Fetch emails when user is authenticated (only once)
   useEffect(() => {
-    if (session) {
+    if (session && !hasLoadedRef.current) {
       fetchEmails();
+      hasLoadedRef.current = true;
     }
   }, [session]);
 

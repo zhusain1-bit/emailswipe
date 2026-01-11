@@ -10,7 +10,7 @@ export class GmailService {
     this.gmail = google.gmail({ version: "v1", auth });
   }
 
-  async getEmails(maxResults: number = 20): Promise<Email[]> {
+  async getEmails(maxResults: number = 100): Promise<Email[]> {
     try {
       const response = await this.gmail.users.messages.list({
         userId: "me",
